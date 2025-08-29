@@ -1,4 +1,4 @@
-# LocalStack S3 — Admin Panel
+# LocalStack S[EV]3 — Admin Panel
 
 This app provides a **lightweight admin panel** for managing S3 buckets and objects running on LocalStack.  
 It consists of two parts:
