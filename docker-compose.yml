@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566" # Edge port (all services)
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+      - LS_LOG=warning
+      - PERSISTENCE=1 # keep data between restarts
+      - AWS_DEFAULT_REGION=us-east-1
+      - HOSTNAME=localhost
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "localstack_data:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+volumes:
+  localstack_data:

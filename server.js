@@ -1,7 +1,7 @@
 /**
  * LocalStack S3 UI Backend API
  *
- * This Express server provides a REST API for interacting with LocalStack S3
+ * This Express server provides a REST API for interacting with LocalStack S[EV]3 Admin
  * It acts as a proxy between your frontend and LocalStack's S3 service
  *
  * Prerequisites:
