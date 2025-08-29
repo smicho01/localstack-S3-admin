@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LocalStack S3 — Admin Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind CSS CDN (for quick prototyping) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Full page layout styles */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    
+    #app-container {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #main-content {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+    }
+    
+    .panel {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .panel-content {
+      flex: 1;
+      overflow-y: auto;
+    }
+    
+    /* Custom scrollbar */
+    .panel-content::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    
+    .panel-content::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    
+    .panel-content::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    
+    .panel-content::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    /* Small tweaks */
+    .scroll-smooth { scroll-behavior: smooth; }
+    .truncate-2 {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div id="app-container">
+    <!-- Top bar -->
+    <header class="bg-white/95 backdrop-blur border-b border-slate-200 flex-shrink-0 z-50">
+      <div class="px-6 py-3 flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1h3a2 2 0 0 1 2 2v7h-2V9h-3v9a2 2 0 0 1-2 2H6l-2 2V6z"/></svg>
+          <h1 class="font-semibold text-lg">LocalStack S3 Admin</h1>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+          <span id="status" class="text-sm text-slate-500">Ready</span>
+          <button id="createBucket" class="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700">New Bucket</button>
+          <button id="refreshBuckets" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800">Refresh</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="main-content" class="flex">
+      <!-- Left Panel: Buckets -->
+      <section class="w-80 border-r border-slate-200 bg-white panel">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+          <h2 class="font-semibold">Buckets</h2>
+          <div class="text-xs text-slate-500" id="bucketCount">0</div>
+        </div>
+        <div id="bucketList" class="panel-content divide-y divide-slate-100"></div>
+      </section>
+
+      <!-- Center Panel: Objects -->
+      <section class="w-1/2 flex-shrink-0 bg-white panel border-r border-slate-200">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+          <div class="min-w-0 flex-1">
+            <div class="text-xs uppercase tracking-wide text-slate-500">Browsing</div>
+            <div id="breadcrumb" class="font-semibold truncate">—</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800 cursor-pointer">
+              <input id="fileInput" type="file" class="hidden" multiple />
+              Upload
+            </label>
+            <button id="goUp" class="px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50">Up</button>
+          </div>
+        </div>
+
+        <!-- Search / prefix input -->
+        <div class="px-4 py-2 border-b border-slate-200 flex items-center gap-2 flex-shrink-0">
+          <input id="prefixInput" class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-400" placeholder="Filter by prefix (e.g., photos/2024/)" />
+          <button id="applyPrefix" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200">Go</button>
+        </div>
+
+        <div id="objectList" class="panel-content divide-y divide-slate-100"></div>
+
+        <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
+          <div class="text-xs text-slate-500" id="pageInfo">—</div>
+          <div class="flex gap-2">
+            <button id="prevPage" class="px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50" disabled>Prev</button>
+            <button id="nextPage" class="px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50" disabled>Next</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Preview -->
+      <section class="flex-1 bg-white panel">
+        <div class="px-4 py-3 border-b border-slate-200 flex-shrink-0">
+          <h2 class="font-semibold">Preview</h2>
+          <div id="selectedMeta" class="text-xs text-slate-500 mt-1">Select a file to preview</div>
+        </div>
+        <div id="previewArea" class="panel-content p-4">
+          <!-- Dynamic content -->
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Upload Progress -->
+  <div id="uploadProgress" class="hidden fixed bottom-4 right-4 bg-white rounded-2xl shadow-lg border border-slate-200 p-4 min-w-[300px] z-50">
+    <div class="font-semibold mb-2">Uploading...</div>
+    <div class="w-full bg-slate-200 rounded-full h-2">
+      <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+    </div>
+    <div id="uploadStatus" class="text-sm text-slate-500 mt-2">Preparing...</div>
+  </div>
+
+  <script>
+    // === Configuration ===
+    const API_BASE = "http://localhost:4000";
+    const els = {
+      status: document.getElementById("status"),
+      bucketList: document.getElementById("bucketList"),
+      bucketCount: document.getElementById("bucketCount"),
+      refreshBuckets: document.getElementById("refreshBuckets"),
+      createBucket: document.getElementById("createBucket"),
+      objectList: document.getElementById("objectList"),
+      breadcrumb: document.getElementById("breadcrumb"),
+      prefixInput: document.getElementById("prefixInput"),
+      applyPrefix: document.getElementById("applyPrefix"),
+      pageInfo: document.getElementById("pageInfo"),
+      prevPage: document.getElementById("prevPage"),
+      nextPage: document.getElementById("nextPage"),
+      previewArea: document.getElementById("previewArea"),
+      selectedMeta: document.getElementById("selectedMeta"),
+      goUp: document.getElementById("goUp"),
+      fileInput: document.getElementById("fileInput"),
+      uploadProgress: document.getElementById("uploadProgress"),
+      progressBar: document.getElementById("progressBar"),
+      uploadStatus: document.getElementById("uploadStatus"),
+    };
+
+    let state = {
+      buckets: [],
+      bucket: null,
+      prefix: "",
+      continuationTokens: [], // stack of tokens for Prev
+      nextToken: null,        // token for Next
+      selection: null,        // { key, size, lastModified, contentType }
+    };
+
+    // === Helpers ===
+    function setStatus(msg) { els.status.textContent = msg; }
+    
+    function joinPrefix(base, leaf) {
+      if (!base) return leaf;
+      return base.endsWith("/") ? base + leaf : base + "/" + leaf;
+    }
+    
+    function parentPrefix(prefix) {
+      if (!prefix) return "";
+      const parts = prefix.endsWith("/") ? prefix.slice(0, -1).split("/") : prefix.split("/");
+      parts.pop();
+      return parts.length ? parts.join("/") + "/" : "";
+    }
+    
+    function humanSize(bytes) {
+      const units = ["B","KB","MB","GB","TB"];
+      let b = Number(bytes || 0), i = 0;
+      while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+      return `${b.toFixed(b < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+    }
+    
+    function extOf(key) {
+      const dot = key.lastIndexOf(".");
+      return dot >= 0 ? key.slice(dot + 1).toLowerCase() : "";
+    }
+    
+    function isTextual(key, contentType) {
+      const ext = extOf(key);
+      const textExts = ["txt","json","csv","md","yaml","yml","xml","log","html","js","ts","css","jsx","tsx","py","java","cpp","c","h","sh","sql"];
+      return (contentType && (contentType.startsWith("text/") || contentType.includes("json") || contentType.includes("xml"))) || textExts.includes(ext);
+    }
+    
+    function canEmbedImage(key, contentType) {
+      const imgExts = ["png","jpg","jpeg","gif","webp","bmp","svg","ico"];
+      return (contentType && contentType.startsWith("image/")) || imgExts.includes(extOf(key));
+    }
+    
+    function canEmbedPDF(key, contentType) {
+      const ext = extOf(key);
+      return (contentType && contentType === "application/pdf") || ext === "pdf";
+    }
+
+    // === API calls ===
+    async function api(path, opts = {}) {
+      try {
+        const res = await fetch(`${API_BASE}${path}`, opts);
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+          throw new Error(error.error || `HTTP ${res.status}`);
+        }
+        // Handle 204 No Content
+        if (res.status === 204) return {};
+        return res.json().catch(() => ({}));
+      } catch (error) {
+        console.error("API Error:", error);
+        throw error;
+      }
+    }
+
+    async function listBuckets() {
+      try {
+        setStatus("Loading buckets…");
+        const buckets = await api("/api/buckets");
+        state.buckets = buckets;
+        els.bucketCount.textContent = buckets.length;
+        renderBuckets();
+        setStatus("Ready");
+      } catch (error) {
+        setStatus("Failed to load buckets");
+        console.error(error);
+      }
+    }
+
+    async function createBucket() {
+      const name = prompt("Enter bucket name (lowercase, 3-63 chars, no spaces):");
+      if (!name) return;
+      
+      try {
+        setStatus("Creating bucket...");
+        await api("/api/buckets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        });
+        await listBuckets();
+        setStatus("Bucket created");
+      } catch (error) {
+        alert(`Failed to create bucket: ${error.message}`);
+        setStatus("Ready");
+      }
+    }
+
+    async function listObjects(prefix = "", token = null) {
+      if (!state.bucket) return;
+      
+      try {
+        setStatus("Loading objects…");
+        const q = new URLSearchParams();
+        if (prefix) q.set("prefix", prefix);
+        if (token) q.set("token", token);
+        
+        const data = await api(`/api/buckets/${encodeURIComponent(state.bucket)}/objects?${q}`);
+        
+        // Manage pagination
+        state.nextToken = data.NextContinuationToken || null;
+        els.prevPage.disabled = state.continuationTokens.length === 0;
+        els.nextPage.disabled = !state.nextToken;
+
+        const count = (data.Contents?.length || 0) + (data.CommonPrefixes?.length || 0);
+        els.pageInfo.textContent = count > 0 ? `Showing ${count} items` : "Empty folder";
+        
+        renderObjects(data);
+        setStatus("Ready");
+      } catch (error) {
+        setStatus("Failed to load objects");
+        console.error(error);
+      }
+    }
+
+    async function getPresignedUrl(key) {
+      try {
+        const data = await api(`/api/buckets/${encodeURIComponent(state.bucket)}/presign?key=${encodeURIComponent(key)}`);
+        return data.url;
+      } catch (error) {
+        console.error("Failed to get presigned URL:", error);
+        throw error;
+      }
+    }
+
+    async function deleteObject(key) {
+      if (!confirm(`Delete "${key}"?`)) return;
+      
+      try {
+        setStatus("Deleting…");
+        await api(`/api/buckets/${encodeURIComponent(state.bucket)}/object?key=${encodeURIComponent(key)}`, { 
+          method: "DELETE" 
+        });
+        
+        // Refresh current listing
+        await listObjects(state.prefix, state.continuationTokens.at(-1) || null);
+        setStatus("Deleted");
+      } catch (error) {
+        alert(`Delete failed: ${error.message}`);
+        setStatus("Ready");
+      }
+    }
+
+    async function uploadFile(file) {
+      if (!state.bucket) {
+        alert("Please select a bucket first.");
+        return;
+      }
+      
+      const key = state.prefix + file.name;
+      
+      // Show progress
+      els.uploadProgress.classList.remove("hidden");
+      els.uploadStatus.textContent = `Uploading ${file.name}...`;
+      els.progressBar.style.width = "0%";
+      
+      try {
+        setStatus("Uploading…");
+        
+        // For files larger than 5MB, use multipart upload
+        if (file.size > 5 * 1024 * 1024) {
+          // Use FormData for larger files
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("key", key);
+          
+          await api(`/api/buckets/${encodeURIComponent(state.bucket)}/upload`, {
+            method: "POST",
+            body: formData
+          });
+        } else {
+          // Use base64 for smaller files
+          const reader = new FileReader();
+          const content = await new Promise((resolve, reject) => {
+            reader.onload = e => resolve(e.target.result.split(',')[1]); // Get base64 part
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+          
+          await api(`/api/buckets/${encodeURIComponent(state.bucket)}/upload-base64`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              key, 
+              content,
+              contentType: file.type || "application/octet-stream"
+            })
+          });
+        }
+        
+        els.progressBar.style.width = "100%";
+        els.uploadStatus.textContent = "Upload complete!";
+        
+        setTimeout(() => {
+          els.uploadProgress.classList.add("hidden");
+        }, 2000);
+        
+        setStatus("Uploaded");
+        await listObjects(state.prefix, state.continuationTokens.at(-1) || null);
+      } catch (error) {
+        alert(`Upload failed: ${error.message}`);
+        els.uploadProgress.classList.add("hidden");
+        setStatus("Ready");
+      }
+    }
+
+    // === Renderers ===
+    function renderBuckets() {
+      els.bucketList.innerHTML = "";
+      
+      if (!state.buckets.length) {
+        els.bucketList.innerHTML = `<div class="px-4 py-6 text-slate-500 text-sm text-center">No buckets found. Create one to get started.</div>`;
+        return;
+      }
+      
+      state.buckets
+        .sort((a, b) => a.Name.localeCompare(b.Name))
+        .forEach(b => {
+          const btn = document.createElement("button");
+          btn.className = `w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center justify-between ${state.bucket === b.Name ? 'bg-slate-100' : ''}`;
+          btn.innerHTML = `
+            <div class="min-w-0">
+              <div class="font-medium truncate">${b.Name}</div>
+              <div class="text-xs text-slate-500">Created: ${new Date(b.CreationDate || Date.now()).toLocaleDateString()}</div>
+            </div>
+            <svg class="w-4 h-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+          `;
+          btn.addEventListener("click", () => {
+            state.bucket = b.Name;
+            state.prefix = "";
+            state.continuationTokens = [];
+            els.prevPage.disabled = true;
+            els.nextPage.disabled = true;
+            els.prefixInput.value = "";
+            updateBreadcrumb();
+            listObjects("");
+            
+            // Update selected state visually
+            document.querySelectorAll("#bucketList button").forEach(el => {
+              el.classList.remove("bg-slate-100");
+            });
+            btn.classList.add("bg-slate-100");
+          });
+          els.bucketList.appendChild(btn);
+        });
+    }
+
+    function renderObjects(data) {
+      els.objectList.innerHTML = "";
+      
+      if (!data.CommonPrefixes?.length && !data.Contents?.length) {
+        els.objectList.innerHTML = `<div class="px-4 py-6 text-slate-500 text-sm text-center">This folder is empty. Upload files to get started.</div>`;
+        return;
+      }
+      
+      // Folders (CommonPrefixes)
+      (data.CommonPrefixes || []).forEach(cp => {
+        const folder = cp.Prefix;
+        const parts = folder.replace(state.prefix, "").split("/").filter(Boolean);
+        const leaf = parts[0] || folder;
+        
+        const row = document.createElement("div");
+        row.className = "px-4 py-3 hover:bg-slate-50 flex items-center justify-between cursor-pointer";
+        row.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center">
+              <svg class="w-5 h-5 text-amber-700" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+            </span>
+            <div class="min-w-0">
+              <div class="font-medium truncate">${leaf}/</div>
+              <div class="text-xs text-slate-500">Folder</div>
+            </div>
+          </div>
+          <button class="text-sm px-2 py-1 rounded-lg border hover:bg-slate-50">Open</button>
+        `;
+        
+        const openFolder = () => {
+          state.continuationTokens = [];
+          state.prefix = folder;
+          updateBreadcrumb();
+          listObjects(state.prefix);
+        };
+        
+        row.addEventListener("click", openFolder);
+        row.querySelector("button").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openFolder();
+        });
+        
+        els.objectList.appendChild(row);
+      });
+
+      // Files (Contents)
+      (data.Contents || [])
+        .filter(o => o.Key !== state.prefix) // filter directory placeholder
+        .forEach(obj => {
+          const displayName = obj.Key.replace(state.prefix, "");
+          const row = document.createElement("div");
+          row.className = "px-4 py-3 hover:bg-slate-50";
+          row.innerHTML = `
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center">
+                  ${getFileIcon(obj.Key)}
+                </span>
+                <div class="min-w-0">
+                  <div class="font-medium truncate">${displayName}</div>
+                  <div class="text-xs text-slate-500">${humanSize(obj.Size)} · ${new Date(obj.LastModified).toLocaleString()}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button class="preview px-2 py-1 rounded-lg border text-sm hover:bg-slate-50">Preview</button>
+                <button class="download px-2 py-1 rounded-lg border text-sm hover:bg-slate-50">
+                  <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                </button>
+                <button class="danger px-2 py-1 rounded-lg border border-red-300 text-red-700 text-sm hover:bg-red-50">
+                  <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                </button>
+              </div>
+            </div>
+          `;
+
+          row.querySelector(".preview").addEventListener("click", async () => {
+            state.selection = {
+              key: obj.Key,
+              size: obj.Size,
+              lastModified: obj.LastModified,
+              contentType: obj.ContentType || ""
+            };
+            await showPreview(obj.Key, obj.Size, obj.LastModified);
+          });
+
+          row.querySelector(".download").addEventListener("click", async () => {
+            try {
+              const url = await getPresignedUrl(obj.Key);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = obj.Key.split("/").pop();
+              a.target = "_blank";
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            } catch (error) {
+              alert("Failed to download file");
+            }
+          });
+
+          row.querySelector(".danger").addEventListener("click", async () => {
+            await deleteObject(obj.Key);
+          });
+
+          els.objectList.appendChild(row);
+        });
+    }
+
+    function getFileIcon(key) {
+      const ext = extOf(key);
+      if (canEmbedImage(key)) {
+        return '<svg class="w-5 h-5 text-green-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>';
+      } else if (ext === 'pdf') {
+        return '<svg class="w-5 h-5 text-red-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-5L9 2H4z" clip-rule="evenodd"/></svg>';
+      } else if (isTextual(key)) {
+        return '<svg class="w-5 h-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>';
+      } else {
+        return '<svg class="w-5 h-5 text-slate-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z"/><path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/></svg>';
+      }
+    }
+
+    function updateBreadcrumb() {
+      const parts = state.prefix.split("/").filter(Boolean);
+      if (!state.bucket) {
+        els.breadcrumb.textContent = "—";
+        return;
+      }
+      
+      const frags = [`<button data-i="-1" class="text-slate-700 hover:underline">${state.bucket}</button>`];
+      let accum = "";
+      
+      parts.forEach((p, i) => {
+        accum = joinPrefix(accum, p) + "/";
+        frags.push(`<span class="text-slate-400 mx-1">/</span><button data-i="${i}" class="text-slate-700 hover:underline">${p}</button>`);
+      });
+      
+      els.breadcrumb.innerHTML = frags.join("");
+      
+      // Add click handlers
+      els.breadcrumb.querySelectorAll("button[data-i]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(btn.getAttribute("data-i"), 10);
+          if (idx === -1) {
+            state.prefix = "";
+          } else {
+            const newParts = state.prefix.split("/").filter(Boolean).slice(0, idx + 1);
+            state.prefix = newParts.join("/") + "/";
+          }
+          state.continuationTokens = [];
+          els.prevPage.disabled = true;
+          listObjects(state.prefix);
+        });
+      });
+    }
+
+    async function showPreview(key, size, lastModified) {
+      els.previewArea.innerHTML = `<div class="text-slate-500 text-sm animate-pulse">Loading preview…</div>`;
+      els.selectedMeta.textContent = `${key.split('/').pop()} · ${humanSize(size)} · ${new Date(lastModified).toLocaleDateString()}`;
+      
+      try {
+        const url = await getPresignedUrl(key);
+        const ct = state.selection?.contentType || "";
+        
+        if (canEmbedImage(key, ct)) {
+          els.previewArea.innerHTML = `
+            <div class="relative">
+              <img src="${url}" alt="${key}" class="max-w-full rounded-xl shadow-lg" />
+            </div>
+          `;
+        } else if (canEmbedPDF(key, ct)) {
+          els.previewArea.innerHTML = `
+            <iframe src="${url}" class="w-full h-[60vh] rounded-xl border" title="PDF preview"></iframe>
+          `;
+        } else if (isTextual(key, ct)) {
+          try {
+            const res = await fetch(url);
+            const text = await res.text();
+            const truncated = text.length > 5000 ? text.substring(0, 5000) + '\n\n... (truncated)' : text;
+            els.previewArea.innerHTML = `
+              <div class="relative">
+                <pre class="p-3 bg-slate-900 text-slate-100 rounded-xl overflow-auto text-xs font-mono max-h-[60vh]"><code>${escapeHtml(truncated)}</code></pre>
+                ${text.length > 5000 ? '<div class="text-xs text-slate-500 mt-2">File truncated for preview. Download to see full content.</div>' : ''}
+              </div>
+            `;
+          } catch (e) {
+            console.error("Failed to load text preview:", e);
+            els.previewArea.innerHTML = `
+              <div class="p-4 rounded-xl bg-slate-100">
+                <div class="font-medium mb-2">Preview not available</div>
+                <a href="${url}" target="_blank" class="underline text-slate-700">Download file</a>
+              </div>`;
+          }
+        } else {
+          els.previewArea.innerHTML = `
+            <div class="p-4 rounded-xl bg-slate-100">
+              <div class="flex items-center gap-3 mb-3">
+                ${getFileIcon(key)}
+                <div>
+                  <div class="font-medium">${key.split('/').pop()}</div>
+                  <div class="text-sm text-slate-500">${humanSize(size)}</div>
+                </div>
+              </div>
+              <a href="${url}" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800">
+                <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                Download File
+              </a>
+              <p class="text-xs text-slate-500 mt-3">No preview available for this file type.</p>
+            </div>`;
+        }
+      } catch (e) {
+        console.error("Preview error:", e);
+        els.previewArea.innerHTML = `<div class="text-red-600 text-sm">Failed to load preview: ${e.message}</div>`;
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // === Event Listeners ===
+    els.refreshBuckets.addEventListener("click", listBuckets);
+    els.createBucket.addEventListener("click", createBucket);
+    
+    els.applyPrefix.addEventListener("click", () => {
+      state.prefix = els.prefixInput.value || "";
+      if (state.prefix && !state.prefix.endsWith("/")) {
+        state.prefix += "/";
+      }
+      state.continuationTokens = [];
+      updateBreadcrumb();
+      listObjects(state.prefix);
+    });
+    
+    els.prefixInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        els.applyPrefix.click();
+      }
+    });
+    
+    els.goUp.addEventListener("click", () => {
+      state.prefix = parentPrefix(state.prefix);
+      state.continuationTokens = [];
+      updateBreadcrumb();
+      listObjects(state.prefix);
+    });
+    
+    els.prevPage.addEventListener("click", async () => {
+      if (!state.continuationTokens.length) return;
+      state.continuationTokens.pop();
+      const prev = state.continuationTokens.pop() || null;
+      state.continuationTokens = [];
+      await listObjects(state.prefix, prev);
+    });
+    
+    els.nextPage.addEventListener("click", async () => {
+      if (!state.nextToken) return;
+      state.continuationTokens.push(state.nextToken);
+      await listObjects(state.prefix, state.nextToken);
+    });
+    
+    els.fileInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      for (const file of files) {
+        await uploadFile(file);
+      }
+      e.target.value = "";
+    });
+
+    // === Drag and Drop Support ===
+    let dragCounter = 0;
+    
+    document.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      dragCounter++;
+      if (dragCounter === 1 && state.bucket) {
+        document.body.classList.add("bg-blue-50");
+      }
+    });
+    
+    document.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter === 0) {
+        document.body.classList.remove("bg-blue-50");
+      }
+    });
+    
+    document.addEventListener("dragover", (e) => {
+      e.preventDefault();
+    });
+    
+    document.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      document.body.classList.remove("bg-blue-50");
+      
+      if (!state.bucket) {
+        alert("Please select a bucket first");
+        return;
+      }
+      
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        await uploadFile(file);
+      }
+    });
+
+    // === Keyboard Shortcuts ===
+    document.addEventListener("keydown", (e) => {
+      // Refresh with F5 or Cmd/Ctrl+R
+      if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
+        e.preventDefault();
+        listBuckets();
+        if (state.bucket) {
+          listObjects(state.prefix);
+        }
+      }
+      
+      // Upload with Cmd/Ctrl+U
+      if ((e.ctrlKey || e.metaKey) && e.key === "u") {
+        e.preventDefault();
+        els.fileInput.click();
+      }
+      
+      // Go up with Backspace
+      if (e.key === "Backspace" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        els.goUp.click();
+      }
+    });
+
+    // === Initialize ===
+    async function init() {
+      try {
+        // Check API health first
+        const health = await api("/api/health");
+        if (health.status === "healthy") {
+          setStatus("Connected to LocalStack");
+          await listBuckets();
+        } else {
+          throw new Error("LocalStack not healthy");
+        }
+      } catch (error) {
+        setStatus("Failed to connect to API");
+        els.previewArea.innerHTML = `
+          <div class="p-4 rounded-xl bg-red-50 text-red-700">
+            <div class="font-semibold mb-2">Connection Error</div>
+            <p class="text-sm mb-3">Unable to connect to the backend API at ${API_BASE}</p>
+            <div class="text-xs">
+              <p>Please ensure:</p>
+              <ul class="list-disc list-inside mt-1">
+                <li>Backend server is running on port 4000</li>
+                <li>LocalStack is running on port 4566</li>
+                <li>CORS is enabled on the backend</li>
+              </ul>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
